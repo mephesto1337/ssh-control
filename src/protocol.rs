@@ -128,10 +128,23 @@ impl From<Vec<u8>> for Packet {
 
 impl Packet {
     pub fn set<T: Wire>(&mut self, val: &T) {
+        const ZERO: [u8; 4] = 0u32.to_be_bytes();
         self.buffer.clear();
+        self.buffer.extend_from_slice(&ZERO[..]);
         val.serialize(&mut self.buffer).unwrap();
+        let size: u32 = self
+            .buffer
+            .len()
+            .checked_sub(ZERO.len())
+            .unwrap()
+            .try_into()
+            .expect("Buffer is over 4GB?!");
+        for (i, b) in size.to_be_bytes().iter().enumerate() {
+            self.buffer[i] = *b;
+        }
     }
 
+    #[allow(clippy::uninit_vec)]
     fn recv<R>(&mut self, reader: &mut R) -> io::Result<()>
     where
         R: Read,
@@ -141,6 +154,7 @@ impl Packet {
         let size = u32::from_be_bytes(raw_size) as usize;
         self.buffer.clear();
         self.buffer.reserve(size);
+        log::debug!("Will received {size} bytes object");
         unsafe { self.buffer.set_len(size) };
         if let Err(e) = reader.read_exact(&mut self.buffer[..]) {
             unsafe { self.buffer.set_len(0) };
@@ -150,13 +164,14 @@ impl Packet {
         }
     }
 
-    pub fn recv_next<'a, T, R>(&'a mut self, reader: &mut R) -> crate::Result<T>
+    pub fn recv_next<T, R>(&mut self, reader: &mut R) -> crate::Result<T>
     where
-        T: Wire,
+        T: Wire + std::fmt::Debug,
         R: Read,
     {
         self.recv(reader)?;
         let (rest, obj) = T::parse(&self.buffer[..])?;
+        log::debug!("Received {obj:?}");
         assert_eq!(rest.len(), 0);
         Ok(obj)
     }
@@ -179,8 +194,6 @@ impl Wire for Packet {
     where
         W: Write,
     {
-        let size: u32 = self.buffer.len().try_into().expect("Buffer is over 4GB?!");
-        size.serialize(writer)?;
         writer.write_all(&self.buffer[..])
     }
 }

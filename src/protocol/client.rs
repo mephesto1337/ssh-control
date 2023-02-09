@@ -1,17 +1,28 @@
-use std::{
-    borrow::Cow,
-    io::{self, Write},
-};
+use std::io::{self, Write};
 
 use nom::{
-    bytes::streaming::tag,
-    combinator::{map, verify},
+    combinator::{map, map_opt, verify},
     error::context,
     number::streaming::be_u32,
-    sequence::{terminated, tuple},
 };
 
-use crate::protocol::{utils::many, NomError, Wire};
+use crate::protocol::{NomError, Wire};
+
+mod alive_check;
+mod close_fwd;
+mod new_session;
+mod new_stdio_fwd;
+mod open_fwd;
+mod stop_listening;
+mod terminate;
+
+pub use alive_check::AliveCheck;
+pub use close_fwd::CloseFwd;
+pub use new_session::NewSession;
+pub use new_stdio_fwd::NewStdioFwd;
+pub use open_fwd::OpenFwd;
+pub use stop_listening::StopListening;
+pub use terminate::Terminate;
 
 const NEW_SESSION: u32 = 0x10000002;
 const ALIVE_CHECK: u32 = 0x10000004;
@@ -21,16 +32,89 @@ const CLOSE_FWD: u32 = 0x10000007;
 const NEW_STDIO_FWD: u32 = 0x10000008;
 const STOP_LISTENING: u32 = 0x10000009;
 
+const FWD_LOCAL: u32 = 1;
+const FWD_REMOTE: u32 = 2;
+const FWD_DYNAMIC: u32 = 3;
+
+const LISTEN_TYPE_UNIX: u32 = -2i32 as u32;
+
+#[derive(Debug)]
+#[repr(u32)]
+pub enum ForwardingType {
+    Local,
+    Remote,
+    Dynamic,
+}
+
+impl Wire for ForwardingType {
+    fn parse<'a, E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
+    where
+        E: NomError<'a>,
+    {
+        context(
+            "ForwardingType",
+            map_opt(be_u32, |v| match v {
+                FWD_LOCAL => Some(Self::Local),
+                FWD_REMOTE => Some(Self::Remote),
+                FWD_DYNAMIC => Some(Self::Dynamic),
+                _ => None,
+            }),
+        )(input)
+    }
+
+    fn serialize<W>(&self, writer: &mut W) -> io::Result<()>
+    where
+        W: Write,
+    {
+        match self {
+            Self::Local => FWD_LOCAL.serialize(writer),
+            Self::Remote => FWD_REMOTE.serialize(writer),
+            Self::Dynamic => FWD_DYNAMIC.serialize(writer),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum ListenType {
+    Inet(u16),
+    Unix,
+}
+
+impl Wire for ListenType {
+    fn parse<'a, E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
+    where
+        E: NomError<'a>,
+    {
+        context(
+            "ListenType",
+            map_opt(be_u32, |port| match port {
+                LISTEN_TYPE_UNIX => Some(Self::Unix),
+                _ => port.try_into().ok().map(Self::Inet),
+            }),
+        )(input)
+    }
+
+    fn serialize<W>(&self, writer: &mut W) -> io::Result<()>
+    where
+        W: Write,
+    {
+        match self {
+            ListenType::Inet(port) => (*port as u32).serialize(writer),
+            ListenType::Unix => LISTEN_TYPE_UNIX.serialize(writer),
+        }
+    }
+}
+
 #[derive(Debug)]
 #[allow(dead_code)]
 pub enum MuxMessage<'a> {
-    NewSession(NewSession<'a>),
-    AliveCheck(AliveCheck),
-    Terminate,
-    OpenFwd,
-    CloseFwd,
-    NewStdioFwd,
-    StopListening,
+    NewSession(new_session::NewSession<'a>),
+    AliveCheck(alive_check::AliveCheck),
+    Terminate(terminate::Terminate),
+    OpenFwd(open_fwd::OpenFwd<'a>),
+    CloseFwd(close_fwd::CloseFwd<'a>),
+    NewStdioFwd(new_stdio_fwd::NewStdioFwd<'a>),
+    StopListening(stop_listening::StopListening),
 }
 
 impl Wire for MuxMessage<'_> {
@@ -54,13 +138,13 @@ impl Wire for MuxMessage<'_> {
             }),
         )(input)?;
         match r#type {
-            NEW_SESSION => map(NewSession::parse, Self::NewSession)(rest),
-            ALIVE_CHECK => map(AliveCheck::parse, Self::AliveCheck)(rest),
-            TERMINATE => todo!(),
-            OPEN_FWD => todo!(),
-            CLOSE_FWD => todo!(),
-            NEW_STDIO_FWD => todo!(),
-            STOP_LISTENING => todo!(),
+            NEW_SESSION => map(new_session::NewSession::parse, Self::NewSession)(rest),
+            ALIVE_CHECK => map(alive_check::AliveCheck::parse, Self::AliveCheck)(rest),
+            TERMINATE => map(terminate::Terminate::parse, Self::Terminate)(rest),
+            OPEN_FWD => map(open_fwd::OpenFwd::parse, Self::OpenFwd)(rest),
+            CLOSE_FWD => map(close_fwd::CloseFwd::parse, Self::CloseFwd)(rest),
+            NEW_STDIO_FWD => map(new_stdio_fwd::NewStdioFwd::parse, Self::NewStdioFwd)(rest),
+            STOP_LISTENING => map(stop_listening::StopListening::parse, Self::StopListening)(rest),
             _ => unreachable!(),
         }
     }
@@ -70,119 +154,74 @@ impl Wire for MuxMessage<'_> {
         W: Write,
     {
         match self {
-            Self::NewSession(n) => {
+            Self::NewSession(body) => {
                 NEW_SESSION.serialize(writer)?;
-                n.serialize(writer)
+                body.serialize(writer)
             }
-            Self::AliveCheck(a) => {
+            Self::AliveCheck(body) => {
                 ALIVE_CHECK.serialize(writer)?;
-                a.serialize(writer)
+                body.serialize(writer)
             }
-            Self::Terminate => todo!(),
-            Self::OpenFwd => todo!(),
-            Self::CloseFwd => todo!(),
-            Self::NewStdioFwd => todo!(),
-            Self::StopListening => todo!(),
+            Self::Terminate(body) => {
+                TERMINATE.serialize(writer)?;
+                body.serialize(writer)
+            }
+            Self::OpenFwd(body) => {
+                OPEN_FWD.serialize(writer)?;
+                body.serialize(writer)
+            }
+            Self::CloseFwd(body) => {
+                CLOSE_FWD.serialize(writer)?;
+                body.serialize(writer)
+            }
+            Self::NewStdioFwd(body) => {
+                NEW_STDIO_FWD.serialize(writer)?;
+                body.serialize(writer)
+            }
+            Self::StopListening(body) => {
+                STOP_LISTENING.serialize(writer)?;
+                body.serialize(writer)
+            }
         }
     }
 }
 
-#[derive(Debug)]
-pub struct NewSession<'a> {
-    pub request_id: u32,
-    pub want_tty: bool,
-    pub want_x11_forwarding: bool,
-    pub subsystem: bool,
-    pub escape_char: u32,
-    pub terminal_type: Cow<'a, str>,
-    pub command: Cow<'a, str>,
-    pub environment: Vec<Cow<'a, str>>,
-}
-
-impl Wire for NewSession<'_> {
-    fn parse<'a, E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
-    where
-        E: NomError<'a>,
-    {
-        context(
-            "NewSession",
-            map(
-                tuple((
-                    be_u32,
-                    <Cow<'_, str> as Wire>::parse,
-                    map(be_u32, |v| v != 0),
-                    map(be_u32, |v| v != 0),
-                    map(be_u32, |v| v != 0),
-                    be_u32,
-                    <Cow<'_, str> as Wire>::parse,
-                    <Cow<'_, str> as Wire>::parse,
-                    terminated(many(<Cow<'_, str> as Wire>::parse), tag(b"\0")),
-                )),
-                |(
-                    request_id,
-                    reserved,
-                    want_tty,
-                    want_x11_forwarding,
-                    subsystem,
-                    escape_char,
-                    terminal_type,
-                    command,
-                    environment,
-                )| {
-                    if !reserved.is_empty() {
-                        log::warn!("Reserved string is not empty: {reserved:?}");
-                    }
-                    Self {
-                        request_id,
-                        want_tty,
-                        want_x11_forwarding,
-                        subsystem,
-                        escape_char,
-                        terminal_type,
-                        command,
-                        environment,
-                    }
-                },
-            ),
-        )(input)
-    }
-
-    fn serialize<W>(&self, writer: &mut W) -> io::Result<()>
-    where
-        W: Write,
-    {
-        self.request_id.serialize(writer)?;
-        Cow::Borrowed("").serialize(writer)?;
-        self.want_tty.serialize(writer)?;
-        self.want_x11_forwarding.serialize(writer)?;
-        self.subsystem.serialize(writer)?;
-        self.escape_char.serialize(writer)?;
-        self.terminal_type.serialize(writer)?;
-        self.command.serialize(writer)?;
-        for e in &self.environment {
-            e.serialize(writer)?;
+impl MuxMessage<'_> {
+    pub fn set_request_id(&mut self, request_id: u32) {
+        match self {
+            Self::NewSession(ref mut body) => {
+                body.request_id = request_id;
+            }
+            Self::AliveCheck(ref mut body) => {
+                body.request_id = request_id;
+            }
+            Self::Terminate(ref mut body) => {
+                body.request_id = request_id;
+            }
+            Self::OpenFwd(ref mut body) => {
+                body.request_id = request_id;
+            }
+            Self::CloseFwd(ref mut body) => {
+                body.request_id = request_id;
+            }
+            Self::NewStdioFwd(ref mut body) => {
+                body.request_id = request_id;
+            }
+            Self::StopListening(ref mut body) => {
+                body.request_id = request_id;
+            }
         }
-        writer.write_all(&[0][..])
-    }
-}
-
-#[derive(Debug)]
-pub struct AliveCheck {
-    pub request_id: u32,
-}
-
-impl Wire for AliveCheck {
-    fn parse<'a, E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
-    where
-        E: NomError<'a>,
-    {
-        context("AliveCheck", map(be_u32, |request_id| Self { request_id }))(input)
     }
 
-    fn serialize<W>(&self, writer: &mut W) -> io::Result<()>
-    where
-        W: Write,
-    {
-        self.request_id.serialize(writer)
+    pub fn get_request_id(&self) -> u32 {
+        match self {
+            Self::NewSession(ref body) => body.request_id,
+            Self::AliveCheck(ref body) => body.request_id,
+            Self::Terminate(ref body) => body.request_id,
+            Self::OpenFwd(ref body) => body.request_id,
+            Self::CloseFwd(ref body) => body.request_id,
+            Self::NewStdioFwd(ref body) => body.request_id,
+            Self::StopListening(ref body) => body.request_id,
+        }
     }
 }

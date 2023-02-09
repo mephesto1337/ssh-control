@@ -1,7 +1,7 @@
 use nom::error::{VerboseError, VerboseErrorKind};
 use std::{borrow::Cow, fmt, io};
 
-pub struct RawBytes<I>(I);
+pub struct RawBytes<I>(pub I);
 
 impl<I> fmt::Display for RawBytes<I>
 where
@@ -57,6 +57,12 @@ pub enum Error {
 
     /// Invalid Packet
     InvalidPacket { description: Cow<'static, str> },
+
+    /// Bad request ID
+    InvalidResponseID {
+        expected: Option<u32>,
+        received: Option<u32>,
+    },
 }
 pub type Result<T> = ::std::result::Result<T, Error>;
 
@@ -67,10 +73,10 @@ impl fmt::Display for Error {
             Self::Parsing(ref vb) => {
                 for (i, (input, kind)) in vb.errors.iter().enumerate() {
                     match kind {
-                        VerboseErrorKind::Context(s) => write!(f, "{i}: {s} at {input}\n")?,
-                        VerboseErrorKind::Nom(k) => write!(f, "{i}: {k:?} at {input}\n")?,
+                        VerboseErrorKind::Context(s) => writeln!(f, "{i}: {s} at {input}")?,
+                        VerboseErrorKind::Nom(k) => writeln!(f, "{i}: {k:?} at {input}")?,
                         VerboseErrorKind::Char(c) => {
-                            write!(f, "{i}: unexpected char {c} at {input}\n")?
+                            writeln!(f, "{i}: unexpected char {c} at {input}")?
                         }
                     }
                 }
@@ -84,8 +90,14 @@ impl fmt::Display for Error {
                 write!(f, "Remote uses incompatible version {version}")
             }
             Self::InvalidPacket { description } => {
-                write!(f, "Received an invalid packet: {}", description)
+                write!(f, "Received an invalid packet: {description}")
             }
+            Self::InvalidResponseID { expected, received } => match (expected, received) {
+                (Some(exp), Some(rec)) => write!(f, "Expect ID 0x{exp:x}, received 0x{rec:x}"),
+                (Some(exp), None) => write!(f, "Expect ID 0x{exp:x}, received none"),
+                (None, Some(rec)) => write!(f, "Expect no ID, received 0x{rec:x}"),
+                _ => unreachable!(),
+            },
         }
     }
 }
