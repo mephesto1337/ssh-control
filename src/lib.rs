@@ -1,6 +1,7 @@
 use passfd::FdPassingExt;
 use std::{
     env, fs,
+    mem::ManuallyDrop,
     os::unix::{io::AsRawFd, net::UnixStream},
     path::Path,
 };
@@ -204,5 +205,30 @@ impl SshControl {
         } else {
             Ok(true)
         }
+    }
+
+    pub fn new_stdio_forward(
+        &mut self,
+        host: impl AsRef<str>,
+        port: client::Port,
+        pipe: Option<command::Pipe>,
+    ) -> Result<u32> {
+        let req: MuxMessage = client::NewStdioFwd {
+            request_id: 0,
+            connect_host: host.as_ref().into(),
+            connect_port: port,
+        }
+        .into();
+        self.send(req)?;
+        let pipe = pipe.unwrap_or_else(command::Pipe::stdio);
+        self.socket.send_fd_with_payload(pipe.read.0, 0u8)?;
+        self.socket.send_fd_with_payload(pipe.write.0, 0u8)?;
+
+        // Avoid pipe being closed
+        let _ = ManuallyDrop::new(pipe);
+
+        let so: server::SessionOpened = self.recv()?;
+
+        Ok(so.session_id)
     }
 }
