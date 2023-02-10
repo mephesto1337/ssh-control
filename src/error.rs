@@ -1,4 +1,5 @@
 use nom::error::{VerboseError, VerboseErrorKind};
+
 use std::{borrow::Cow, fmt, io};
 
 pub struct RawBytes<I>(pub I);
@@ -63,6 +64,15 @@ pub enum Error {
         expected: Option<u32>,
         received: Option<u32>,
     },
+
+    /// Permission denied
+    PermissionDenied(String),
+
+    /// Failure
+    Failure(String),
+
+    /// TTY allocation failed,
+    TtyAllocFailed,
 }
 pub type Result<T> = ::std::result::Result<T, Error>;
 
@@ -98,6 +108,13 @@ impl fmt::Display for Error {
                 (None, Some(rec)) => write!(f, "Expect no ID, received 0x{rec:x}"),
                 _ => unreachable!(),
             },
+            Self::PermissionDenied(ref reason) => {
+                write!(f, "Remote operation not permietted: {reason}")
+            }
+            Self::Failure(ref reason) => {
+                write!(f, "Remote operation failed: {reason}")
+            }
+            Self::TtyAllocFailed => f.write_str("Remote TTY allocation failed"),
         }
     }
 }
