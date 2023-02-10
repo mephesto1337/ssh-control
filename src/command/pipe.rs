@@ -42,6 +42,19 @@ impl Pipe {
         let write = PipeWrite(w.into_raw_fd());
         Ok(Self { read, write })
     }
+
+    pub fn with_pipes(read: PipeRead, write: PipeWrite) -> Self {
+        Self { read, write }
+    }
+
+    pub fn stdio() -> Self {
+        let stdin = io::stdin().lock().as_raw_fd();
+        let stdout = io::stdout().lock().as_raw_fd();
+        Self {
+            read: PipeRead(stdin),
+            write: PipeWrite(stdout),
+        }
+    }
 }
 
 impl AsRawFd for PipeRead {
@@ -98,5 +111,21 @@ impl Drop for PipeWrite {
         if ret < 0 {
             log::warn!("Could not close PipeWrite {}", self.0);
         }
+    }
+}
+
+impl Read for Pipe {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.read.read(buf)
+    }
+}
+
+impl Write for Pipe {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.write.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.write.flush()
     }
 }
