@@ -1,6 +1,10 @@
 use nom::error::{VerboseError, VerboseErrorKind};
 
-use std::{borrow::Cow, fmt, io};
+use std::{
+    borrow::Cow,
+    fmt::{self, Write},
+    io,
+};
 
 pub struct RawBytes<I>(pub I);
 
@@ -9,16 +13,34 @@ where
     I: AsRef<[u8]>,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fn show_string(s: &str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            for c in s.bytes() {
+                match c {
+                    b'\n' => f.write_str("\\n")?,
+                    b'\r' => f.write_str("\\r")?,
+                    b'\t' => f.write_str("\\t")?,
+                    _ => {
+                        if c.is_ascii_alphanumeric() || c.is_ascii_punctuation() || c == b' ' {
+                            f.write_char(c as char)?;
+                        } else {
+                            write!(f, "\\x{c:02x}")?;
+                        }
+                    }
+                }
+            }
+            Ok(())
+        }
+
         let mut data = self.0.as_ref();
         while !data.is_empty() {
             match std::str::from_utf8(data) {
                 Ok(v) => {
-                    return fmt::Display::fmt(v, f);
+                    return show_string(v, f);
                 }
                 Err(e) => {
                     if e.valid_up_to() > 0 {
                         let s = unsafe { std::str::from_utf8_unchecked(&data[..e.valid_up_to()]) };
-                        fmt::Display::fmt(s, f)?;
+                        show_string(s, f)?;
                     }
                     write!(f, "\\{:02x}", data[e.valid_up_to()])?;
                     data = &data[e.valid_up_to() + 1..];
@@ -81,6 +103,7 @@ impl fmt::Display for Error {
         match self {
             Self::IO(ref e) => fmt::Display::fmt(e, f),
             Self::Parsing(ref vb) => {
+                writeln!(f, "Parsing error:")?;
                 for (i, (input, kind)) in vb.errors.iter().enumerate() {
                     match kind {
                         VerboseErrorKind::Context(s) => writeln!(f, "{i}: {s} at {input}")?,
