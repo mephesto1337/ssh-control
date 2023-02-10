@@ -51,7 +51,6 @@ impl Wire for Extension<'_> {
     where
         E: NomError<'a>,
     {
-        dbg!(input);
         context(
             "Extension",
             map(

@@ -15,7 +15,6 @@ impl Wire for ExitMessage {
     where
         E: NomError<'a>,
     {
-        log::debug!("ExitMessage::parse: {}", crate::error::RawBytes(input));
         context(
             "ExitMessage",
             map(tuple((be_u32, be_u32)), |(session_id, exit_value)| Self {
