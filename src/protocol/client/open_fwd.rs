@@ -6,7 +6,7 @@ use std::{
 use nom::{combinator::map, error::context, number::streaming::be_u32, sequence::tuple};
 
 use crate::protocol::{
-    client::{ForwardingType, ListenType, MuxMessage},
+    client::{ForwardingType, MuxMessage, Port},
     NomError, Wire,
 };
 
@@ -15,9 +15,9 @@ pub struct OpenFwd<'a> {
     pub request_id: u32,
     pub forwarding_type: ForwardingType,
     pub listen_host: Cow<'a, str>,
-    pub listen_port: ListenType,
+    pub listen_port: Port,
     pub connect_host: Cow<'a, str>,
-    pub connect_port: ListenType,
+    pub connect_port: Port,
 }
 
 impl Wire for OpenFwd<'_> {
@@ -32,9 +32,9 @@ impl Wire for OpenFwd<'_> {
                     be_u32,
                     ForwardingType::parse,
                     <Cow<'_, str> as Wire>::parse,
-                    ListenType::parse,
+                    Port::parse,
                     <Cow<'_, str> as Wire>::parse,
-                    ListenType::parse,
+                    Port::parse,
                 )),
                 |(
                     request_id,
