@@ -6,7 +6,7 @@ use std::{
 use nom::{combinator::map, error::context, number::streaming::be_u32, sequence::tuple};
 
 use crate::protocol::{
-    client::{ListenType, MuxMessage},
+    client::{MuxMessage, Port},
     NomError, Wire,
 };
 
@@ -14,7 +14,7 @@ use crate::protocol::{
 pub struct NewStdioFwd<'a> {
     pub request_id: u32,
     pub connect_host: Cow<'a, str>,
-    pub connect_port: ListenType,
+    pub connect_port: Port,
 }
 
 impl<'a> Wire<'a> for NewStdioFwd<'a> {
@@ -29,7 +29,7 @@ impl<'a> Wire<'a> for NewStdioFwd<'a> {
                     be_u32,
                     <Cow<'_, str> as Wire>::parse,
                     <Cow<'_, str> as Wire>::parse,
-                    ListenType::parse,
+                    Port::parse,
                 )),
                 |(request_id, reserved, connect_host, connect_port)| {
                     if !reserved.is_empty() {

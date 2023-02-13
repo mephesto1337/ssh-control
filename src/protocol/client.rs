@@ -75,12 +75,12 @@ impl<'a> Wire<'a> for ForwardingType {
 }
 
 #[derive(Debug)]
-pub enum ListenType {
+pub enum Port {
     Inet(u16),
     Unix,
 }
 
-impl<'a> Wire<'a> for ListenType {
+impl<'a> Wire<'a> for Port {
     fn parse<E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
     where
         E: NomError<'a>,
@@ -99,8 +99,8 @@ impl<'a> Wire<'a> for ListenType {
         W: Write,
     {
         match self {
-            ListenType::Inet(port) => (*port as u32).serialize(writer),
-            ListenType::Unix => LISTEN_TYPE_UNIX.serialize(writer),
+            Port::Inet(port) => (*port as u32).serialize(writer),
+            Port::Unix => LISTEN_TYPE_UNIX.serialize(writer),
         }
     }
 }

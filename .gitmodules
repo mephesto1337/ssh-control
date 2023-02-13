@@ -1,0 +1,4 @@
+[submodule "passfd"]
+	path = passfd
+	url = https://github.com/mephesto1337/passfd.git
+	branch = ssh-control

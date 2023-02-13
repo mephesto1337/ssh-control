@@ -152,3 +152,30 @@ impl<'a> MuxResponse<'a> {
         }
     }
 }
+
+macro_rules! impl_from_mux_response {
+    ($variant:ident, $type:ty) => {
+        impl From<MuxResponse<'_>> for $crate::Result<$type> {
+            fn from(value: MuxResponse<'_>) -> Self {
+                match value {
+                    MuxResponse::PermissionDenied(pd) => {
+                        Err($crate::Error::PermissionDenied(pd.reason.into_owned()))
+                    }
+                    MuxResponse::Failure(f) => {
+                        Err($crate::Error::PermissionDenied(f.reason.into_owned()))
+                    }
+                    MuxResponse::$variant(val) => Ok(val),
+                    _ => Err($crate::Error::InvalidPacket {
+                        description: format!("{value:?}").into(),
+                    }),
+                }
+            }
+        }
+    };
+}
+
+impl_from_mux_response!(Alive, Alive);
+impl_from_mux_response!(ExitMessage, ExitMessage);
+impl_from_mux_response!(Ok, Ok);
+impl_from_mux_response!(RemotePort, RemotePort);
+impl_from_mux_response!(SessionOpened, SessionOpened);

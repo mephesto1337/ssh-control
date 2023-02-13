@@ -1,5 +1,7 @@
 use passfd::FdPassingExt;
 use std::{
+    env, fs,
+    mem::ManuallyDrop,
     os::unix::{io::AsRawFd, net::UnixStream},
     path::Path,
 };
@@ -10,6 +12,9 @@ pub use protocol::{
     server::{self, MuxResponse},
     Hello, Packet, Wire,
 };
+
+pub mod command;
+use command::{Child, SshCommand};
 
 pub(crate) mod error;
 pub use error::{Error, Result};
@@ -54,7 +59,7 @@ impl SshControl {
         Ok(())
     }
 
-    pub fn recv(&mut self) -> Result<MuxResponse<'_>> {
+    fn recv_helper(&mut self) -> Result<MuxResponse<'_>> {
         let response: MuxResponse = self.buffer.recv_next(&mut self.socket)?;
         let expected_request_id = self.expected_request_id.take();
         if response.get_request_id() != expected_request_id {
@@ -66,6 +71,14 @@ impl SshControl {
         } else {
             Ok(response)
         }
+    }
+
+    fn recv<'a, T>(&'a mut self) -> Result<T>
+    where
+        MuxResponse<'a>: Into<Result<T>>,
+    {
+        let msg = self.recv_helper()?;
+        msg.into()
     }
 
     fn send_hello(&mut self) -> Result<()> {
@@ -92,63 +105,130 @@ impl SshControl {
     pub fn check_alive(&mut self) -> Result<u32> {
         let check: MuxMessage = client::AliveCheck { request_id: 0 }.into();
         self.send(check)?;
-        let response = self.recv()?;
-        match response {
-            MuxResponse::Alive(a) => {
-                log::info!("Server pid: {}", a.server_pid);
-                Ok(a.server_pid)
-            }
-            _ => {
-                log::error!("Alive check received bad response type: {response:?}");
-                Err(Error::InvalidPacket {
-                    description: format!("{response:#?}").into(),
-                })
-            }
-        }
+        let alive: server::Alive = self.recv()?;
+        Ok(alive.server_pid)
     }
 
-    pub fn new_session(&mut self, command: impl AsRef<str>) -> Result<u32> {
+    pub fn new_session(&mut self, command: SshCommand) -> Result<Child> {
+        let environment: Vec<_> = command
+            .environment
+            .iter()
+            .map(|(k, v)| format!("{k}={v}").into())
+            .collect();
         let req: MuxMessage = client::NewSession {
             request_id: 0,
-            want_tty: false,
-            want_x11_forwarding: false,
+            want_tty: command.want_tty,
+            want_x11_forwarding: command.want_x11_forwarding,
             want_agent: false,
             subsystem: false,
             escape_char: b'~' as u32,
-            terminal_type: "tmux-256color".into(),
-            command: command.as_ref().into(),
-            environment: vec!["LANG=en_US.UTF-8".into(), "TERM=tmux-256color".into()],
+            terminal_type: env::var("TERM")
+                .ok()
+                .unwrap_or_else(|| "xterm".into())
+                .into(),
+            command: command.shell_command.into(),
+            environment,
         }
         .into();
         self.send(req)?;
 
-        let stdin = std::io::stdin().lock();
-        self.socket.send_fd(stdin.as_raw_fd())?;
-        let stdout = std::io::stdout().lock();
-        self.socket.send_fd(stdout.as_raw_fd())?;
-        let stderr = std::io::stderr().lock();
-        self.socket.send_fd(stderr.as_raw_fd())?;
+        let devnull =
+            if command.stdin.is_some() || command.stdout.is_some() || command.stderr.is_some() {
+                Some(
+                    fs::OpenOptions::new()
+                        .read(true)
+                        .write(true)
+                        .open("/dev/null")?,
+                )
+            } else {
+                None
+            };
 
-        let response = self.recv()?;
-        match response {
-            MuxResponse::SessionOpened(so) => {
-                log::info!("Session opened with ID: {}", so.session_id);
-                Ok(so.session_id)
-            }
-            MuxResponse::PermissionDenied(pd) => {
-                log::error!("Cannot open session (permission denied): {}", pd.reason);
-                Ok(0)
-            }
-            MuxResponse::Failure(f) => {
-                log::error!("Cannot open session (failure): {}", f.reason);
-                Ok(0)
-            }
-            _ => {
-                log::error!("NewSession check received bad response type: {response:?}");
-                Err(Error::InvalidPacket {
-                    description: format!("{response:#?}").into(),
-                })
-            }
+        let (child_stdin, stdin) = match command.stdin {
+            Some(p) => (Some(p.write), p.read),
+            None => (
+                None,
+                command::PipeRead(
+                    devnull
+                        .as_ref()
+                        .map(|f| f.as_raw_fd())
+                        .unwrap_or_else(|| std::io::stdin().lock().as_raw_fd()),
+                ),
+            ),
+        };
+        let (child_stdout, stdout) = match command.stdout {
+            Some(p) => (Some(p.read), p.write),
+            None => (
+                None,
+                command::PipeWrite(
+                    devnull
+                        .as_ref()
+                        .map(|f| f.as_raw_fd())
+                        .unwrap_or_else(|| std::io::stdout().lock().as_raw_fd()),
+                ),
+            ),
+        };
+        let (child_stderr, stderr) = match command.stderr {
+            Some(p) => (Some(p.read), p.write),
+            None => (
+                None,
+                command::PipeWrite(
+                    devnull
+                        .as_ref()
+                        .map(|f| f.as_raw_fd())
+                        .unwrap_or_else(|| std::io::stderr().lock().as_raw_fd()),
+                ),
+            ),
+        };
+        self.socket.send_fd_with_payload(stdin.as_raw_fd(), 0u8)?;
+        self.socket.send_fd_with_payload(stdout.as_raw_fd(), 0u8)?;
+        self.socket.send_fd_with_payload(stderr.as_raw_fd(), 0u8)?;
+
+        let so: server::SessionOpened = self.recv()?;
+        Ok(Child {
+            stdin: child_stdin,
+            stdout: child_stdout,
+            stderr: child_stderr,
+            session: so.session_id,
+            _devnull: devnull,
+        })
+    }
+
+    pub fn wait(&mut self, child: &Child) -> Result<bool> {
+        let server::ExitMessage { session_id, .. } = self.recv()?;
+        if session_id != child.session {
+            log::warn!(
+                "Session {session_id} was joined, but {} was expected",
+                child.session
+            );
+            Ok(false)
+        } else {
+            Ok(true)
         }
+    }
+
+    pub fn new_stdio_forward(
+        &mut self,
+        host: impl AsRef<str>,
+        port: client::Port,
+        pipe: Option<command::Pipe>,
+    ) -> Result<u32> {
+        let req: MuxMessage = client::NewStdioFwd {
+            request_id: 0,
+            connect_host: host.as_ref().into(),
+            connect_port: port,
+        }
+        .into();
+        self.send(req)?;
+        let pipe = pipe.unwrap_or_else(command::Pipe::stdio);
+        self.socket.send_fd_with_payload(pipe.read.0, 0u8)?;
+        self.socket.send_fd_with_payload(pipe.write.0, 0u8)?;
+
+        // Avoid pipe being closed
+        let _ = ManuallyDrop::new(pipe);
+
+        let so: server::SessionOpened = self.recv()?;
+
+        Ok(so.session_id)
     }
 }
