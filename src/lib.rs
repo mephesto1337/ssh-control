@@ -54,7 +54,7 @@ impl SshControl {
         Ok(())
     }
 
-    pub fn recv(&mut self) -> Result<MuxResponse> {
+    pub fn recv(&mut self) -> Result<MuxResponse<'_>> {
         let response: MuxResponse = self.buffer.recv_next(&mut self.socket)?;
         let expected_request_id = self.expected_request_id.take();
         if response.get_request_id() != expected_request_id {

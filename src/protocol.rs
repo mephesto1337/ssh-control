@@ -22,8 +22,8 @@ impl<'a, E> NomError<'a> for E where
 {
 }
 
-pub trait Wire: Sized {
-    fn parse<'a, E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
+pub trait Wire<'a>: Sized {
+    fn parse<E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
     where
         E: NomError<'a>;
 
@@ -46,8 +46,8 @@ pub struct Extension<'a> {
     pub value: Cow<'a, str>,
 }
 
-impl Wire for Extension<'_> {
-    fn parse<'a, E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
+impl<'a> Wire<'a> for Extension<'a> {
+    fn parse<E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
     where
         E: NomError<'a>,
     {
@@ -70,14 +70,36 @@ impl Wire for Extension<'_> {
     }
 }
 
+impl<'a> Extension<'a> {
+    pub fn into_owned(self) -> Extension<'static> {
+        Extension {
+            name: Cow::Owned(self.name.into_owned()),
+            value: Cow::Owned(self.value.into_owned()),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Hello<'a> {
     pub version: u32,
     pub extensions: Vec<Extension<'a>>,
 }
 
-impl Wire for Hello<'_> {
-    fn parse<'a, E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
+impl<'a> Hello<'a> {
+    pub fn into_owned(self) -> Hello<'static> {
+        Hello {
+            version: self.version,
+            extensions: self
+                .extensions
+                .into_iter()
+                .map(Extension::into_owned)
+                .collect(),
+        }
+    }
+}
+
+impl<'a> Wire<'a> for Hello<'a> {
+    fn parse<E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
     where
         E: NomError<'a>,
     {
@@ -127,7 +149,7 @@ impl From<Vec<u8>> for Packet {
 }
 
 impl Packet {
-    pub fn set<T: Wire>(&mut self, val: &T) {
+    pub fn set<'a, T: Wire<'a>>(&mut self, val: &'a T) {
         const ZERO: [u8; 4] = 0u32.to_be_bytes();
         self.buffer.clear();
         self.buffer.extend_from_slice(&ZERO[..]);
@@ -164,9 +186,9 @@ impl Packet {
         }
     }
 
-    pub fn recv_next<T, R>(&mut self, reader: &mut R) -> crate::Result<T>
+    pub fn recv_next<'a, T, R>(&'a mut self, reader: &mut R) -> crate::Result<T>
     where
-        T: Wire + std::fmt::Debug,
+        T: Wire<'a> + std::fmt::Debug,
         R: Read,
     {
         self.recv(reader)?;
@@ -177,8 +199,8 @@ impl Packet {
     }
 }
 
-impl Wire for Packet {
-    fn parse<'a, E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
+impl<'a> Wire<'a> for Packet {
+    fn parse<E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
     where
         E: NomError<'a>,
     {

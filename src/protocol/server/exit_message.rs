@@ -10,8 +10,8 @@ pub struct ExitMessage {
     pub exit_value: u32,
 }
 
-impl Wire for ExitMessage {
-    fn parse<'a, E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
+impl<'a> Wire<'a> for ExitMessage {
+    fn parse<E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
     where
         E: NomError<'a>,
     {
@@ -31,6 +31,12 @@ impl Wire for ExitMessage {
     {
         self.session_id.serialize(writer)?;
         self.exit_value.serialize(writer)
+    }
+}
+
+impl ExitMessage {
+    pub fn into_owned(self) -> Self {
+        self
     }
 }
 

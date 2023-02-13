@@ -13,8 +13,8 @@ pub struct Failure<'a> {
     pub reason: Cow<'a, str>,
 }
 
-impl Wire for Failure<'_> {
-    fn parse<'a, E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
+impl<'a> Wire<'a> for Failure<'a> {
+    fn parse<E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
     where
         E: NomError<'a>,
     {
@@ -36,6 +36,15 @@ impl Wire for Failure<'_> {
     {
         self.client_request_id.serialize(writer)?;
         self.reason.serialize(writer)
+    }
+}
+
+impl<'a> Failure<'a> {
+    pub fn into_owned(self) -> Failure<'static> {
+        Failure {
+            client_request_id: self.client_request_id,
+            reason: Cow::Owned(self.reason.into_owned()),
+        }
     }
 }
 

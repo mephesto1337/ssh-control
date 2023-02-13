@@ -26,8 +26,8 @@ pub struct NewSession<'a> {
     pub environment: Vec<Cow<'a, str>>,
 }
 
-impl Wire for NewSession<'_> {
-    fn parse<'a, E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
+impl<'a> Wire<'a> for NewSession<'a> {
+    fn parse<E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
     where
         E: NomError<'a>,
     {
@@ -96,6 +96,26 @@ impl Wire for NewSession<'_> {
         }
         Ok(())
         // writer.write_all(&[0u8][..])
+    }
+}
+
+impl<'a> NewSession<'a> {
+    pub fn into_owned(self) -> NewSession<'static> {
+        NewSession {
+            request_id: self.request_id,
+            want_tty: self.want_tty,
+            want_x11_forwarding: self.want_x11_forwarding,
+            want_agent: self.want_agent,
+            subsystem: self.subsystem,
+            escape_char: self.escape_char,
+            terminal_type: Cow::Owned(self.terminal_type.into_owned()),
+            command: Cow::Owned(self.command.into_owned()),
+            environment: self
+                .environment
+                .into_iter()
+                .map(|e| Cow::Owned(Cow::into_owned(e)))
+                .collect(),
+        }
     }
 }
 

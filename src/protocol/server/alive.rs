@@ -10,8 +10,14 @@ pub struct Alive {
     pub server_pid: u32,
 }
 
-impl Wire for Alive {
-    fn parse<'a, E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
+impl Alive {
+    pub fn into_owned(self) -> Self {
+        self
+    }
+}
+
+impl<'a> Wire<'a> for Alive {
+    fn parse<E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
     where
         E: NomError<'a>,
     {

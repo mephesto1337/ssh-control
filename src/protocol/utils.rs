@@ -6,8 +6,8 @@ use crate::protocol::{NomError, Wire};
 
 macro_rules! impl_wire_nums {
     ($type:ty, $parser:ident) => {
-        impl Wire for $type {
-            fn parse<'a, E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
+        impl<'a> Wire<'a> for $type {
+            fn parse<E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
             where
                 E: NomError<'a>,
             {
@@ -25,8 +25,8 @@ macro_rules! impl_wire_nums {
 }
 impl_wire_nums!(u32, be_u32);
 
-impl Wire for bool {
-    fn parse<'a, E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
+impl<'a> Wire<'a> for bool {
+    fn parse<E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
     where
         E: NomError<'a>,
     {

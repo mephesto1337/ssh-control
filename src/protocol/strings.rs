@@ -12,8 +12,8 @@ use nom::{
 
 use crate::protocol::{NomError, Wire};
 
-impl Wire for String {
-    fn parse<'a, E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
+impl<'a> Wire<'a> for String {
+    fn parse<E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
     where
         E: NomError<'a>,
     {
@@ -38,8 +38,8 @@ impl Wire for String {
     }
 }
 
-impl Wire for Cow<'_, str> {
-    fn parse<'a, E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
+impl<'a> Wire<'a> for Cow<'a, str> {
+    fn parse<E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
     where
         E: NomError<'a>,
     {

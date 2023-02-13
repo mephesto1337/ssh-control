@@ -10,8 +10,8 @@ pub struct RemotePort {
     pub allocated_remote_listen_port: u32,
 }
 
-impl Wire for RemotePort {
-    fn parse<'a, E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
+impl<'a> Wire<'a> for RemotePort {
+    fn parse<E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
     where
         E: NomError<'a>,
     {
@@ -33,6 +33,12 @@ impl Wire for RemotePort {
     {
         self.client_request_id.serialize(writer)?;
         self.allocated_remote_listen_port.serialize(writer)
+    }
+}
+
+impl RemotePort {
+    pub fn into_owned(self) -> Self {
+        self
     }
 }
 

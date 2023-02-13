@@ -9,8 +9,8 @@ pub struct TtyAllocFail {
     pub session_id: u32,
 }
 
-impl Wire for TtyAllocFail {
-    fn parse<'a, E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
+impl<'a> Wire<'a> for TtyAllocFail {
+    fn parse<E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
     where
         E: NomError<'a>,
     {
@@ -25,6 +25,12 @@ impl Wire for TtyAllocFail {
         W: Write,
     {
         self.session_id.serialize(writer)
+    }
+}
+
+impl TtyAllocFail {
+    pub fn into_owned(self) -> Self {
+        self
     }
 }
 

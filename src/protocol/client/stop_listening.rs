@@ -9,8 +9,8 @@ pub struct StopListening {
     pub request_id: u32,
 }
 
-impl Wire for StopListening {
-    fn parse<'a, E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
+impl<'a> Wire<'a> for StopListening {
+    fn parse<E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
     where
         E: NomError<'a>,
     {
@@ -25,6 +25,12 @@ impl Wire for StopListening {
         W: Write,
     {
         self.request_id.serialize(writer)
+    }
+}
+
+impl StopListening {
+    pub fn into_owned(self) -> Self {
+        self
     }
 }
 

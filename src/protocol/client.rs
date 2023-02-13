@@ -46,8 +46,8 @@ pub enum ForwardingType {
     Dynamic,
 }
 
-impl Wire for ForwardingType {
-    fn parse<'a, E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
+impl<'a> Wire<'a> for ForwardingType {
+    fn parse<E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
     where
         E: NomError<'a>,
     {
@@ -80,8 +80,8 @@ pub enum ListenType {
     Unix,
 }
 
-impl Wire for ListenType {
-    fn parse<'a, E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
+impl<'a> Wire<'a> for ListenType {
+    fn parse<E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
     where
         E: NomError<'a>,
     {
@@ -106,7 +106,6 @@ impl Wire for ListenType {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub enum MuxMessage<'a> {
     NewSession(new_session::NewSession<'a>),
     AliveCheck(alive_check::AliveCheck),
@@ -117,8 +116,8 @@ pub enum MuxMessage<'a> {
     StopListening(stop_listening::StopListening),
 }
 
-impl Wire for MuxMessage<'_> {
-    fn parse<'a, E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
+impl<'a> Wire<'a> for MuxMessage<'a> {
+    fn parse<E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
     where
         E: NomError<'a>,
     {
@@ -182,6 +181,19 @@ impl Wire for MuxMessage<'_> {
                 STOP_LISTENING.serialize(writer)?;
                 body.serialize(writer)
             }
+        }
+    }
+}
+impl<'a> MuxMessage<'a> {
+    pub fn into_owned(self) -> MuxMessage<'static> {
+        match self {
+            Self::NewSession(body) => MuxMessage::NewSession(body.into_owned()),
+            Self::AliveCheck(body) => MuxMessage::AliveCheck(body.into_owned()),
+            Self::Terminate(body) => MuxMessage::Terminate(body.into_owned()),
+            Self::OpenFwd(body) => MuxMessage::OpenFwd(body.into_owned()),
+            Self::CloseFwd(body) => MuxMessage::CloseFwd(body.into_owned()),
+            Self::NewStdioFwd(body) => MuxMessage::NewStdioFwd(body.into_owned()),
+            Self::StopListening(body) => MuxMessage::StopListening(body.into_owned()),
         }
     }
 }

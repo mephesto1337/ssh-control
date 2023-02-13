@@ -13,8 +13,8 @@ pub struct PermissionDenied<'a> {
     pub reason: Cow<'a, str>,
 }
 
-impl Wire for PermissionDenied<'_> {
-    fn parse<'a, E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
+impl<'a> Wire<'a> for PermissionDenied<'a> {
+    fn parse<E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
     where
         E: NomError<'a>,
     {
@@ -42,5 +42,14 @@ impl Wire for PermissionDenied<'_> {
 impl<'a> From<PermissionDenied<'a>> for MuxResponse<'a> {
     fn from(value: PermissionDenied<'a>) -> Self {
         Self::PermissionDenied(value)
+    }
+}
+
+impl<'a> PermissionDenied<'a> {
+    pub fn into_owned(self) -> PermissionDenied<'static> {
+        PermissionDenied {
+            client_request_id: self.client_request_id,
+            reason: Cow::Owned(self.reason.into_owned()),
+        }
     }
 }

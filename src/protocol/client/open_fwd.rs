@@ -20,8 +20,8 @@ pub struct OpenFwd<'a> {
     pub connect_port: ListenType,
 }
 
-impl Wire for OpenFwd<'_> {
-    fn parse<'a, E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
+impl<'a> Wire<'a> for OpenFwd<'a> {
+    fn parse<E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
     where
         E: NomError<'a>,
     {
@@ -67,6 +67,19 @@ impl Wire for OpenFwd<'_> {
         self.listen_port.serialize(writer)?;
         self.connect_host.serialize(writer)?;
         self.connect_port.serialize(writer)
+    }
+}
+
+impl<'a> OpenFwd<'a> {
+    pub fn into_owned(self) -> OpenFwd<'static> {
+        OpenFwd {
+            request_id: self.request_id,
+            forwarding_type: self.forwarding_type,
+            listen_host: Cow::Owned(self.listen_host.into_owned()),
+            listen_port: self.listen_port,
+            connect_host: Cow::Owned(self.connect_host.into_owned()),
+            connect_port: self.connect_port,
+        }
     }
 }
 

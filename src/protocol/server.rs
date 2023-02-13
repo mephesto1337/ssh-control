@@ -47,8 +47,8 @@ pub enum MuxResponse<'a> {
     TtyAllocFail(tty_alloc_fail::TtyAllocFail),
 }
 
-impl Wire for MuxResponse<'_> {
-    fn parse<'a, E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
+impl<'a> Wire<'a> for MuxResponse<'a> {
+    fn parse<E>(input: &'a [u8]) -> nom::IResult<&'a [u8], Self, E>
     where
         E: NomError<'a>,
     {
@@ -126,6 +126,19 @@ impl Wire for MuxResponse<'_> {
 }
 
 impl<'a> MuxResponse<'a> {
+    pub fn into_owned(self) -> MuxResponse<'static> {
+        match self {
+            Self::Ok(body) => MuxResponse::Ok(body.into_owned()),
+            Self::PermissionDenied(body) => MuxResponse::PermissionDenied(body.into_owned()),
+            Self::Failure(body) => MuxResponse::Failure(body.into_owned()),
+            Self::ExitMessage(body) => MuxResponse::ExitMessage(body.into_owned()),
+            Self::Alive(body) => MuxResponse::Alive(body.into_owned()),
+            Self::SessionOpened(body) => MuxResponse::SessionOpened(body.into_owned()),
+            Self::RemotePort(body) => MuxResponse::RemotePort(body.into_owned()),
+            Self::TtyAllocFail(body) => MuxResponse::TtyAllocFail(body.into_owned()),
+        }
+    }
+
     pub fn get_request_id(&self) -> Option<u32> {
         match self {
             Self::Ok(ref body) => Some(body.client_request_id),
