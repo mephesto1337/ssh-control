@@ -1,6 +1,6 @@
 use passfd::FdPassingExt;
 use std::{
-    env, fs,
+    env,
     mem::ManuallyDrop,
     os::unix::{io::AsRawFd, net::UnixStream},
     path::Path,
@@ -135,52 +135,22 @@ impl SshControl {
         .into();
         self.send(req)?;
 
-        let devnull =
-            if command.stdin.is_some() || command.stdout.is_some() || command.stderr.is_some() {
-                Some(
-                    fs::OpenOptions::new()
-                        .read(true)
-                        .write(true)
-                        .open("/dev/null")?,
-                )
-            } else {
-                None
-            };
-
         let (child_stdin, stdin) = match command.stdin {
             Some(p) => (Some(p.write), p.read),
-            None => (
-                None,
-                command::PipeRead(
-                    devnull
-                        .as_ref()
-                        .map(|f| f.as_raw_fd())
-                        .unwrap_or_else(|| std::io::stdin().lock().as_raw_fd()),
-                ),
-            ),
+            None => (None, command::PipeRead(std::io::stdin().lock().as_raw_fd())),
         };
         let (child_stdout, stdout) = match command.stdout {
             Some(p) => (Some(p.read), p.write),
             None => (
                 None,
-                command::PipeWrite(
-                    devnull
-                        .as_ref()
-                        .map(|f| f.as_raw_fd())
-                        .unwrap_or_else(|| std::io::stdout().lock().as_raw_fd()),
-                ),
+                command::PipeWrite(std::io::stdout().lock().as_raw_fd()),
             ),
         };
         let (child_stderr, stderr) = match command.stderr {
             Some(p) => (Some(p.read), p.write),
             None => (
                 None,
-                command::PipeWrite(
-                    devnull
-                        .as_ref()
-                        .map(|f| f.as_raw_fd())
-                        .unwrap_or_else(|| std::io::stderr().lock().as_raw_fd()),
-                ),
+                command::PipeWrite(std::io::stderr().lock().as_raw_fd()),
             ),
         };
         let payload = &[0u8][..];
@@ -197,7 +167,6 @@ impl SshControl {
             stdout: child_stdout,
             stderr: child_stderr,
             session: so.session_id,
-            _devnull: devnull,
         })
     }
 

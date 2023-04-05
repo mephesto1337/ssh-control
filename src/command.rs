@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt, fs::File};
+use std::{collections::HashMap, fmt};
 
 mod pipe;
 pub use pipe::{Pipe, PipeRead, PipeWrite};
@@ -8,7 +8,6 @@ pub struct Child {
     pub stdout: Option<PipeRead>,
     pub stderr: Option<PipeRead>,
     pub(super) session: u32,
-    pub(super) _devnull: Option<File>,
 }
 
 impl fmt::Debug for Child {
