@@ -16,5 +16,5 @@ name = "ssh_control"
 libc = "0.2.139"
 log = "0.4.17"
 nom = "7.1.3"
-passfd = { path = "passfd" }
+passfd = "0.1.6"
 env_logger = "0.10.0"

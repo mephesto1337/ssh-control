@@ -180,9 +180,13 @@ impl SshControl {
                 ),
             ),
         };
-        self.socket.send_fd_with_payload(stdin.as_raw_fd(), 0u8)?;
-        self.socket.send_fd_with_payload(stdout.as_raw_fd(), 0u8)?;
-        self.socket.send_fd_with_payload(stderr.as_raw_fd(), 0u8)?;
+        let payload = &[0u8][..];
+        self.socket
+            .send_fd_with_payload(stdin.as_raw_fd(), payload)?;
+        self.socket
+            .send_fd_with_payload(stdout.as_raw_fd(), payload)?;
+        self.socket
+            .send_fd_with_payload(stderr.as_raw_fd(), payload)?;
 
         let so: server::SessionOpened = self.recv()?;
         Ok(Child {
@@ -220,9 +224,10 @@ impl SshControl {
         }
         .into();
         self.send(req)?;
+        let payload = &[0u8][..];
         let pipe = pipe.unwrap_or_else(command::Pipe::stdio);
-        self.socket.send_fd_with_payload(pipe.read.0, 0u8)?;
-        self.socket.send_fd_with_payload(pipe.write.0, 0u8)?;
+        self.socket.send_fd_with_payload(pipe.read.0, payload)?;
+        self.socket.send_fd_with_payload(pipe.write.0, payload)?;
 
         // Avoid pipe being closed
         let _ = ManuallyDrop::new(pipe);
