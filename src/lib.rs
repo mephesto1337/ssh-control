@@ -43,7 +43,9 @@ impl SshControl {
     }
 
     fn get_next_request_id(&mut self) -> u32 {
-        self.request_id.wrapping_add(1)
+        let next = self.request_id.wrapping_add(1);
+        self.request_id = next;
+        next
     }
 
     fn send<'a, T>(&mut self, obj: T) -> Result<()>
@@ -55,6 +57,7 @@ impl SshControl {
         msg.set_request_id(request_id);
         self.expected_request_id = Some(request_id);
         self.buffer.set(&msg);
+        log::debug!("Will send {msg:?}");
         self.buffer.serialize(&mut self.socket)?;
         Ok(())
     }
@@ -235,5 +238,13 @@ impl SshControl {
         let so: server::SessionOpened = self.recv()?;
 
         Ok(so.session_id)
+    }
+
+    pub fn terminate(&mut self) -> Result<()> {
+        let req: MuxMessage = client::Terminate { request_id: 0 }.into();
+        self.send(req)?;
+        let _: server::Ok = self.recv()?;
+
+        Ok(())
     }
 }
